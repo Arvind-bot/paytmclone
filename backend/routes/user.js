@@ -1,13 +1,17 @@
 const express = require("express");
-const zod = require("zod");
 const {
   validateUserSignUpInputs,
   validateUserSignInInputs,
+  validateUpdateUserInputs,
 } = require("../middlewares/user");
 const User = require("../db/user");
 const jwt = require("jsonwebtoken");
 const { JWT_SECRET } = require("../config");
 const { authenticateUser } = require("../middlewares/auth");
+const { Account } = require("../db/account");
+
+const max=10000;
+const min=1;
 
 const router = express.Router();
 
@@ -30,7 +34,11 @@ router.post("/signup", validateUserSignUpInputs, async (req, res) => {
   });
   newUser.password = await newUser.createHash(password);
   const user = await newUser.save();
-
+  await Account.create({
+    userId: user._id,
+    balance: Math.floor(Math.random() * (max - min + 1)) + min,
+  });
+  
   const token = jwt.sign(
     {
       userId: user?._id,
@@ -68,6 +76,7 @@ router.post("/signin", validateUserSignInInputs, async (req, res) => {
     }
   }
 });
+
 router.use(authenticateUser);
 router.put("/", validateUpdateUserInputs, async (req, res) => {
   const { userId, body } = req || {};
@@ -94,7 +103,7 @@ router.put("/", validateUpdateUserInputs, async (req, res) => {
 router.get("/bulk", async (req, res) => {
   try {
     const searchParams = req.query;
-    const filterKeyword = searchParams.filter;
+    const filterKeyword = searchParams.filter || '';
     const users = await User.find({
       $or: [
         { firstName: { $regex: filterKeyword, $options: "i" } }, // Case-insensitive match
