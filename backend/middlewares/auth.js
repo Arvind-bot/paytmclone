@@ -1,9 +1,9 @@
 const jwt = require("jsonwebtoken");
-const { JWT_SECRET } = require("../config");
+const secrets = require("../config/secrets.json");
+const JWT_SECRET = secrets?.development?.jwt_secret;
 
 function authenticateUser(req, res, next) {
-  const { body } = req || {};
-  const { headers } = body || {};
+  const { headers } = req || {};
   const { authorization } = headers || {};
   if (!authorization || !authorization.startsWith("Bearer ")) {
     return res.status(403).json({

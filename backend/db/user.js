@@ -33,14 +33,18 @@ const userSchema = new Schema({
 });
 
 // Method to generate Hash from plain text  using argon2
-userSchema.methods.createHash = async (plainTextPassword) => {
+userSchema.methods.createHash = async function(plainTextPassword) {
   // return password hash
   return await argon2.hash(plainTextPassword);
 };
 
 // Method to validate the entered password using argon2
-userSchema.methods.validatePassword = async (candidatePassword) => {
-  return await argon2.verify(this.password_hash, candidatePassword)
+userSchema.methods.validatePassword = async function(candidatePassword) {
+  try {
+    return await argon2.verify(this.password, candidatePassword)
+  } catch (err) {
+    throw new Error(err);
+  }
 };
 
 // Create a model from the schema

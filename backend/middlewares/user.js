@@ -1,32 +1,29 @@
 const { userSignUpSchema, userSignInSchema, updateUserInfoSchema } = require("../zodschemas/userSchemas");
 
-function validateUserSignUpInputs(req, res, next) {
+const validateUserSignUpInputs = (req, res, next) => {
   try {
     userSignUpSchema.parse(req.body);
     next();
   } catch (error) {
-    console.log({error});
-    res.status(400).json({ success: false, message: 'Invalid inputs!' });
+    res.status(400).json({ success: false, message: 'Invalid inputs!', errorData: error });
   }
 }
 
-function validateUserSignInInputs(req, res, next) {
+const validateUserSignInInputs = (req, res, next) => {
   try {
     userSignInSchema.parse(req.body);
     next();
   } catch (error) {
-    console.log({error});
-    res.status(400).json({ success: false, message: 'Invalid inputs or Username/password are missing!' });
+    res.status(400).json({ success: false, message: 'Invalid inputs or Username/password are missing!', error });
   }
 }
 
-function validateUpdateUserInputs(req, res, next) {
+const validateUpdateUserInputs = (req, res, next) => {
   try {
     updateUserInfoSchema.parse(req.body);
     next();
   } catch (error) {
-    console.log({error});
-    res.status(400).json({ success: false, message: 'Invalid inputs!' });
+    res.status(400).json({ success: false, message: 'Invalid inputs!', error });
   }
 }
 

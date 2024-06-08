@@ -6,104 +6,141 @@ const {
 } = require("../middlewares/user");
 const User = require("../db/user");
 const jwt = require("jsonwebtoken");
-const { JWT_SECRET } = require("../config");
 const { authenticateUser } = require("../middlewares/auth");
-const { Account } = require("../db/account");
-
-const max=10000;
-const min=1;
+const Account = require("../db/account");
+const secrets = require("../config/secrets.json");
+const JWT_SECRET = secrets?.development?.jwt_secret;
+const max = 1000000;
+const min = 1;
 
 const router = express.Router();
 
 router.post("/signup", validateUserSignUpInputs, async (req, res) => {
-  const { body } = req || {};
-  const { username, password, firstName, lastName } = body || {};
-  const userAlreadyExist = await User.findOne({ username });
-  if (userAlreadyExist) {
-    res.status(411).json({
-      message:
-        "username/Email already taken, please try with different username/email",
+  try {
+    const { body } = req || {};
+    const { username, password, firstName, lastName } = body || {};
+    const userAlreadyExist = await User.findOne({ username });
+    if (userAlreadyExist) {
+      res.status(411).json({
+        message:
+          "username/Email already taken, please try with different username/email",
+      });
+      return;
+    }
+
+    const newUser = new User({
+      username,
+      firstName,
+      lastName,
     });
-    return;
+    newUser.password = await newUser.createHash(password);
+    const user = await newUser.save();
+
+    if (!user) {
+      return res.status(400).json({
+        message: "There was an error while creating the user",
+      });
+    }
+
+    const account = await Account.create({
+      userId: user._id,
+      balance: Math.floor(Math.random() * (max - min + 1)) + min,
+    });
+
+    if (!account) {
+      return res.status(400).json({
+        message:
+          "User has been created. But, there was an error while creating the user bank account",
+      });
+    }
+
+    const token = jwt.sign(
+      {
+        userId: user?._id,
+      },
+      JWT_SECRET
+    );
+
+    res.status(200).json({
+      message: "User created successfully",
+      token,
+    });
+  } catch (error) {
+    console.error("error", error);
+    res.status(400).json({
+      message: "There was an error while processing your request",
+    });
   }
-
-  const newUser = new User({
-    username,
-    firstName,
-    lastName,
-  });
-  newUser.password = await newUser.createHash(password);
-  const user = await newUser.save();
-  await Account.create({
-    userId: user._id,
-    balance: Math.floor(Math.random() * (max - min + 1)) + min,
-  });
-  
-  const token = jwt.sign(
-    {
-      userId: user?._id,
-    },
-    JWT_SECRET
-  );
-
-  res.status(200).json({
-    message: "User created successfully",
-    token,
-  });
 });
 
 router.post("/signin", validateUserSignInInputs, async (req, res) => {
-  const { username, password } = req?.body || {};
-  const user = await User.findOne({ username: username });
-  if (!user) {
-    return res.status(411).json({
-      message:
-        "User not found. Please check wether you provided correct username",
-    });
-  } else {
-    if (await user.validatePassword(password)) {
-      const token = jwt.sign(
-        { username: user?.username, userId: user?._id },
-        JWT_SECRET
-      );
-      return res.status(200).json({
-        token,
-      });
-    } else {
-      return res.status(411).json({
-        message: "Incorrect Password",
-      });
-    }
-  }
-});
-
-router.use(authenticateUser);
-router.put("/", validateUpdateUserInputs, async (req, res) => {
-  const { userId, body } = req || {};
-  const { firstName, lastName, password } = body || {};
   try {
-    const user = await User.findOne({ _id: userId });
+    const { username, password } = req?.body || {};
+    const user = await User.findOne({ username: username });
     if (!user) {
       return res.status(411).json({
-        message: "User not found.",
+        message:
+          "User not found. Please check wether you provided correct username",
       });
+    } else {
+      const isInvalidPassword = await user.validatePassword(password);
+      if (isInvalidPassword) {
+        const token = jwt.sign(
+          { username: user?.username, userId: user?._id },
+          JWT_SECRET
+        );
+        return res.status(200).json({
+          token,
+        });
+      } else {
+        return res.status(411).json({
+          message: "Incorrect Password",
+        });
+      }
     }
-    user.password = password ? user.createHash(password) : user.password;
-    user.firstName = firstName || user.firstName;
-    user.lastName = lastName || user.lastName;
-    await user.save();
-    res
-      .status(200)
-      .json({ message: "User info has been updated successfully" });
   } catch (error) {
-    res.status(411).json({ message: "Error while updating information." });
+    return res
+      .status(400)
+      .json({
+        error: true,
+        message: "There was an error while processing your request",
+        errorInfo: { message: error?.message, stack: error?.stack },
+      });
   }
 });
 
-router.get("/bulk", async (req, res) => {
+// router.use(authenticateUser);
+router.put(
+  "/",
+  authenticateUser,
+  validateUpdateUserInputs,
+  async (req, res) => {
+    const { userId, body } = req || {};
+    const { firstName, lastName, password } = body || {};
+    try {
+      const user = await User.findOne({ _id: userId });
+      if (!user) {
+        return res.status(411).json({
+          message: "User not found.",
+        });
+      }
+      user.password = password ? await user.createHash(password) : user.password;
+      user.firstName = firstName || user.firstName;
+      user.lastName = lastName || user.lastName;
+      await user.save();
+      res
+        .status(200)
+        .json({ message: "User info has been updated successfully" });
+    } catch (error) {
+      res.status(411).json({ message: "Error while updating information.", error });
+    }
+  }
+);
+
+router.get("/bulk", authenticateUser, async (req, res) => {
   try {
     const searchParams = req.query;
-    const filterKeyword = searchParams.filter || '';
+    const filterKeyword = searchParams.filter || "";
     const users = await User.find({
       $or: [
         { firstName: { $regex: filterKeyword, $options: "i" } }, // Case-insensitive match
@@ -121,6 +158,11 @@ router.get("/bulk", async (req, res) => {
   } catch (error) {
     res.status(411).json({ message: "Error while processing your request." });
   }
+});
+
+router.use((err, req, res, next) => {
+  console.error(err.stack); // Log the error for debugging
+  res.status(500).json({ error: err.message }); // Send a response to the client
 });
 
 module.exports = router;
