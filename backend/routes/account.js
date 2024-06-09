@@ -1,9 +1,11 @@
 const express = require("express");
+const mongoose = require("mongoose");
 const Account = require("../db/account");
 const User = require("../db/user");
+const { authenticateUser } = require("../middlewares/auth");
 const router = express.Router();
 
-router.get("/balance", async (req, res) => {
+router.get("/balance", authenticateUser, async (req, res) => {
   try {
     const { userId } = req || {};
     const userAccount = await Account.findOne({ userId })
@@ -16,7 +18,7 @@ router.get("/balance", async (req, res) => {
   }
 })
 
-router.post("/transfer", async (req, res) => {
+router.post("/transfer", authenticateUser, async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
@@ -24,30 +26,28 @@ router.post("/transfer", async (req, res) => {
     const { to, amount } = req?.body || {};
     const userAccount = await Account.findOne({ userId }).session(session);
     
-    if(!userAccount || userAccount.balance <= amount) {
-      throw new Error({ message: "Insufficient balance" });
+    if(!userAccount || userAccount.balance < amount) {
+      await session.abortTransaction();
+      return res.status(400).json({ message: "Insufficient balance" });
     }
 
     const toUserAccount = await Account.findOne({ userId: to }).session(session);
     
     if(!toUserAccount) {
-      throw new Error({ message: "Invalid account" });
+      await session.abortTransaction();
+      return res.status(400).json({ message: "To user account is invalid" });
     }
 
-    userAccount.balance -= amount;
-    toUserAccount.balance += amount;
-    
-    await userAccount.save({ session });
-    await toUserAccount.save({ session });
+    await Account.updateOne({ userId }, { $inc: { balance: -amount } }).session(session);
+    await Account.updateOne({ userId: to }, { $inc: { balance: amount } }).session(session);
+
     await session.commitTransaction();
-    session.endSession();
 
     res.status(200).json({ message: "Transfer successful" });
   } catch (error) {
     await session.abortTransaction();
-    session.endSession();
     console.log("error", error);
-    res.status(400).json({ message: error?.message || "Error while processing your request." });
+    res.status(400).json({ error, message: "Error while processing your request." });
   }
 })
 
